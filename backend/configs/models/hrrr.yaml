@@ -1,0 +1,43 @@
+metadata:
+  id: "hrrr"
+  display_name_short: "HRRR"
+  display_name_full: "High-Resolution Rapid Refresh"
+  source_agency: "NOAA"
+  
+# --- Timing & Scheduling ---
+schedule:
+  # All 24 cycles run every day (00z to 23z)
+  all_cycles: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+  
+  # Configuration rules based on the cycle time (T)
+  cycle_configs:
+    # Rule for the Major Cycles (which forecast 48 hours out)
+    long_run:
+      applies_to_hours: [0, 6, 12, 18] # 00Z, 06Z, 12Z, 18Z
+      forecast_hours: 48             # Total forecast length
+      time_step_h: 1                 # Data is provided hourly
+      latency_delay_s: 2880          # 48 minutes * 60 seconds (approx)
+      
+    # Rule for the Minor Cycles (all other runs)
+    short_run:
+      applies_to_hours: [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23]
+      forecast_hours: 18             # Forecast goes out 18 hours
+      time_step_h: 1
+      latency_delay_s: 2880          # 48 minutes * 60 seconds (approx)
+
+# --- Download & Variable Mapping ---
+download:
+  # URL template for data retrieval (uses f-string placeholders)
+  fhour_digits: 2
+  url_template: https://nomads.ncep.noaa.gov/cgi-bin/filter_hrrr_2d.pl?dir=%2Fhrrr.{year}{month}{day}%2Fconus&file=hrrr.t{cycle}z.wrfsfcf{fhour}.grib2&var_{internal_id}=on&{grib_level}=on
+  
+
+variables:
+  - internal_id: "REFC"
+    grib_level: "lev_entire_atmosphere"
+    original_unit: "dBZ"
+    
+  # Internal Standard ID: wind_gust_surface
+  - internal_id: "TMP"
+    grib_level: "lev_2_m_above_ground"
+    original_unit: "m/s"

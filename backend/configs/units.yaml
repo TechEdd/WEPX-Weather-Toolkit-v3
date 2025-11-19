@@ -1,0 +1,33 @@
+
+conversions:
+  # --- Source Unit: Kelvin (K) ---
+  K:
+    # Target 1: Celsius
+    - target_unit: "C"
+      formula: "{x} - 273.15" # Math: K -> C
+      
+    # Target 2: Fahrenheit
+    - target_unit: "F"
+      formula: "({x} - 273.15) * 1.8 + 32" # Math: K -> C then C -> F
+      
+  # --- Source Unit: Meters per Second (m/s) ---
+  "m/s":
+    # Target 1: Kilometers per Hour
+    - target_unit: "km/h"
+      formula: "{x} * 3.6"
+      
+    # Target 2: Knots
+    - target_unit: "knots"
+      formula: "{x} * 1.94384"
+      
+    # Target 3: Miles per Hour
+    - target_unit: "mph"
+      formula: "{x} * 2.23694"
+
+display_units:
+  C: "°C"
+  F: "°F"
+  K: "K"
+  "km/h": "km/h"
+  knots: "kts"
+  mph: "mph"
