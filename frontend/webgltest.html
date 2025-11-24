@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Multi-Layer WebGL Map</title>
+    <script src="https://unpkg.com/topojson-client@3"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #0d1117; font-family: 'Segoe UI', sans-serif; color: #c9d1d9; }
+        
+        #map-viewport { 
+            position: relative; 
+            width: 100vw; 
+            height: 100vh; 
+            overflow: hidden; 
+        }
+
+        #map-viewport canvas { 
+            position: absolute; 
+            top: 0; left: 0; 
+            width: 100%; height: 100%; 
+            outline: none;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 20px; left: 20px;
+            z-index: 100;
+            background: rgba(22, 27, 34, 0.9);
+            border: 1px solid #30363d;
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            max-width: 250px;
+        }
+
+        h1 { margin: 0 0 10px 0; font-size: 16px; font-weight: 600; color: #58a6ff; }
+        
+        button {
+            width: 100%;
+            background: #238636;
+            color: white;
+            border: none;
+            padding: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+            transition: background 0.2s;
+            margin-bottom: 10px;
+        }
+        button:hover { background: #2ea043; }
+        
+        #status { font-size: 11px; color: #8b949e; border-top: 1px solid #30363d; padding-top: 5px; }
+        #coords { font-family: monospace; font-size: 12px; color: #7ee787; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+<div id="map-viewport"></div>
+
+<div id="ui-layer">
+    <h1>Adaptive Map Engine</h1>
+    <button id="toggleMorphBtn">Toggle Projection</button>
+    <div id="status">Initializing...</div>
+	<div id="timeDisplay"></div>
+    <div id="coords">Lat: -, Lon: -</div>
+	<div id="hoverValue"></div>
+	<input type="range" id="timeSlider" min="0" max="0" value="0" step="1" disabled>
+</div>
+
+<script id="vertex-shader" type="x-shader/x-vertex">
+    attribute vec2 a_position;
+    attribute vec2 a_uv;
+
+    uniform float u_morph;
+    uniform vec2 u_scale;
+    uniform vec2 u_offset;
+    uniform vec2 u_resolution;
+    
+    varying vec2 v_uv;
+    const float PI = 3.14159265359;
+
+    float mercy(float lat) {
+        float latClamped = clamp(lat, -1.48, 1.48); 
+        return log(tan((PI / 4.0) + (latClamped / 2.0)));
+    }
+
+    void main() {
+        v_uv = a_uv;
+        vec2 posCyl = a_position; 
+        vec2 posMerc = vec2(a_position.x, mercy(a_position.y));
+        vec2 worldPos = mix(posCyl, posMerc, u_morph);
+        vec2 cameraPos = (worldPos * u_scale) + u_offset;
+        
+        float aspect = u_resolution.x / u_resolution.y;
+        vec2 clipSpace = cameraPos;
+        clipSpace.x /= aspect; 
+
+        gl_Position = vec4(clipSpace, 0.0, 1.0);
+        gl_PointSize = 3.0;
+    }
+</script>
+
+<script id="fragment-shader" type="x-shader/x-fragment">
+    precision mediump float;
+    varying vec2 v_uv;
+    
+    uniform float u_isRaster;
+    uniform float u_opacity;
+    uniform vec4 u_color;
+    
+    // NEW: Reads from the Canvas you provide
+    uniform sampler2D u_texture; 
+
+    void main() {
+        if (u_isRaster > 0.5) {
+            // Read color directly from the texture (canvas)
+            vec4 texColor = texture2D(u_texture, v_uv);
+            gl_FragColor = vec4(texColor.rgb, texColor.a * u_opacity);
+        } else {
+            // Vector lines
+            gl_FragColor = u_color;
+        }
+    }
+</script>
+
+<script src="js/map.js"></script>
+
+<script>
+
+const map = new AdaptiveMap('map-viewport');
+document.getElementById('toggleMorphBtn').addEventListener('click', () => map.toggleProjection());
+
+// 1. Add Vector Layers
+map.addLayer('topoJSON/countries-50m.json', 'countries', [1, 1, 1.0, 0.9]);
+let statesId = null;
+map.addLayer('topoJSON/states-50m.json', 'states', [1.0, 1, 1, 0.8]).then(id => statesId = id);
+
+// 2. Create the "Heatmap" Canvas
+let canvas = document.createElement('canvas');
+let ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+let rasterId = map.addRaster(canvas, [-134.12142793280148, 21.14706163554821, -60.92779791187436, 52.62870288555903]);
+
+</script>
+<script src='js/stream.js'></script>
+</body>
+</html>

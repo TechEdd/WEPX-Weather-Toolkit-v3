@@ -14,6 +14,7 @@ class DownloadTask:
     urls: List[str]
     cycle_time: datetime.datetime
     model_id: str
+    variables_config: List[Dict] # Passing config to assist conversion later
 
 class WeatherModelConfig:
     def __init__(self, yaml_path: str, contact_email: str):
@@ -24,6 +25,7 @@ class WeatherModelConfig:
             self.config = yaml.safe_load(f)
 
         self.id = self.config['metadata']['id']
+        self.source_agency = self.config['metadata'].get('source_agency', 'GENERIC')
         
         # Schedule shortcuts
         self.lead_minutes = self.config['schedule']['lead_minutes']
@@ -33,6 +35,7 @@ class WeatherModelConfig:
         # Download config
         self.fhour_digits = self.config['download']['fhour_digits']
         self.url_template = self.config['download']['url_template']
+        self.url_variable_template = self.config['download'].get('url_variable_template', "")
 
     def get_forecast_duration(self, cycle_hour: int) -> int:
         """Determines forecast length based on whether it's a long or short run."""
@@ -58,11 +61,6 @@ class WeatherModelConfig:
         best_status = "NO_CYCLE"
         best_cycle = None
         
-        # We iterate back to find the first cycle that is READY.
-        # If we find a READY cycle, we return immediately.
-        # If we find a WAITING/MISSED cycle, we store it as a fallback 
-        # in case no READY cycle exists.
-        
         for i in range(24):
             check_time = now_hour - datetime.timedelta(hours=i)
             
@@ -73,63 +71,85 @@ class WeatherModelConfig:
                 
                 # Check status for this specific candidate
                 if start_window <= current_time_utc <= end_window:
-                    # We found an active window! Return immediately.
                     return "READY", check_time
                 
                 elif current_time_utc < start_window:
-                    # We are early for this cycle. 
-                    # Store it as a candidate, but keep looking back in case 
-                    # the PREVIOUS cycle is still open (overlapping).
                     if best_status == "NO_CYCLE": # Only keep the closest WAITING
                         wait_seconds = (start_window - current_time_utc).total_seconds()
                         best_status = f"WAITING (Starts in {int(wait_seconds/60)} mins)"
                         best_cycle = check_time
                         
                 else: 
-                    # current_time > end_window (We missed this specific cycle)
-                    # If we haven't found a "WAITING" or "READY" yet, this is our best guess.
                     if best_status == "NO_CYCLE":
                         best_status = "MISSED (Window closed)"
                         best_cycle = check_time
-                        # If we missed the most recent cycle, it's unlikely a cycle 
-                        # from 2 hours ago is valid (unless windows are huge), 
-                        # but the loop continues just in case.
 
         return best_status, best_cycle
 
     def generate_url_list(self, cycle_time: datetime.datetime) -> List[str]:
-        """Generates all URLs for the variables and time steps."""
+        """Generates URLs. Aggregates variables if agency is NOMADS."""
         urls = []
         
-        # Determine forecast length for this specific cycle (e.g. 18 vs 48)
         max_fhour = self.get_forecast_duration(cycle_time.hour)
         
-        # Format parts for URL
         year = cycle_time.strftime("%Y")
         month = cycle_time.strftime("%m")
         day = cycle_time.strftime("%d")
         cycle = f"{cycle_time.hour:02d}"
         
-        # Loop through all forecast hours (0 to max)
-        for fhour in range(max_fhour + 1):
-            # Format fhour (e.g., "02")
-            fhour_str = f"{fhour:0{self.fhour_digits}d}"
-            
-            # Loop through all variables
-            for var_config in self.config['variables']:
+        # --- NOMADS OPTIMIZATION: One URL per Forecast Hour (All Variables) ---
+        if self.source_agency == "NOMADS":
+            for fhour in range(max_fhour + 1):
+                fhour_str = f"{fhour:0{self.fhour_digits}d}"
                 
-                # Construct the URL using the f-string template from YAML
-                # We use .format() to inject the dynamic values
-                url = self.url_template.format(
+                # 1. Build the list of variable query parameters
+                variable_params = []
+                for var_config in self.config['variables']:
+                    # Example: "var_REFC=on&lev_entire_atmosphere=on"
+                    param = self.url_variable_template.format(
+                        internal_id=var_config['internal_id'],
+                        url_level=var_config['url_level']
+                    )
+                    variable_params.append(param)
+                
+                # 2. Join all variables with '&'
+                combined_query = "&".join(variable_params)
+                
+                # 3. Construct Base URL (using the template, but usually the template includes variable placeholders)
+                # We assume url_template ends before the variable part or we append to it.
+                # However, your yaml template is: ...filter_hrrr_2d.pl?dir=...&file=...
+                # We need to append the combined query to the base template.
+                
+                base_url = self.url_template.format(
                     year=year,
                     month=month,
                     day=day,
                     cycle=cycle,
-                    fhour=fhour_str,
-                    internal_id=var_config['internal_id'],
-                    grib_level=var_config['grib_level']
+                    fhour=fhour_str
                 )
-                urls.append(url)
+                
+                # Ensure we join correctly
+                full_url = f"{base_url}&{combined_query}"
+                urls.append(full_url)
+
+        # --- GENERIC / LEGACY: One URL per Variable per Forecast Hour ---
+        else:
+            for fhour in range(max_fhour + 1):
+                fhour_str = f"{fhour:0{self.fhour_digits}d}"
+                for var_config in self.config['variables']:
+                    # Note: This assumes url_template expects internal_id/grib_level slots
+                    # which might not be true for the NOMADS template in your YAML.
+                    # This path is a fallback.
+                    url = self.url_template.format(
+                        year=year,
+                        month=month,
+                        day=day,
+                        cycle=cycle,
+                        fhour=fhour_str,
+                        internal_id=var_config['internal_id'],
+                        grib_level=var_config['grib_level']
+                    )
+                    urls.append(url)
                 
         return urls
 
@@ -140,7 +160,8 @@ class WeatherModelConfig:
         return DownloadTask(
             urls=urls,
             cycle_time=cycle_time,
-            model_id=self.id
+            model_id=self.id,
+            variables_config=self.config['variables']
         )
 
 def load_all_models(config_dir: str, contact_email: str) -> List[WeatherModelConfig]:
@@ -156,11 +177,7 @@ def load_all_models(config_dir: str, contact_email: str) -> List[WeatherModelCon
     
 def download_url(url, email=None, retry_delay=30, max_retries=30, username=None, password=None, output_filename=None):
     """
-    Downloads a file from a URL with retry logic and optional authentication.
-    
-    Returns:
-        str: The absolute filepath of the downloaded file if successful.
-        bool: False if the download failed after all retries.
+    Downloads a file from a URL.
     """
     
     headers = {}
@@ -177,36 +194,24 @@ def download_url(url, email=None, retry_delay=30, max_retries=30, username=None,
             match = re.search(r"t(\d{2})z", url)
             if match:
                 forecast_hour = str(match.group(1))
-                output_filename = forecast_hour + "/" + url.split(".grib2&")[-1] + ".grib2"
+                # Generate a unique name for the aggregated file
+                # e.g., hrrr.t12z.wrfsfcf00.multi.grib2
+                base_name = url.split("file=")[1].split("&")[0]
+                output_filename = forecast_hour + "/" + base_name
             else:
-                output_filename = url.split(".grib2&")[-1] + ".grib2"
+                output_filename = "unknown_fhour.grib2"
                 
         else:
             parsed_url = urlparse(url)
-            # Check if it's a NOMADS/CGI style URL with a 'file' query parameter
-            query_params = parse_qs(parsed_url.query)
-            
-            if 'file' in query_params:
-                # Use the file parameter (e.g., hrrr.t00z.wrfsfcf01.grib2)
-                output_filename = query_params['file'][0]
-            else:
-                # Fallback to the last part of the path
-                output_filename = os.path.basename(parsed_url.path)
-                if not output_filename:
-                    output_filename = "downloaded_file.dat"
+            output_filename = os.path.basename(parsed_url.path)
 
     print(f"Target filename: {output_filename}")
 
     # Retry Loop
     for attempt in range(1, max_retries + 1):
         try:
-            # stream=True is important for large files to save memory
-            with requests.get(url, headers=headers, auth=auth, stream=True, timeout=10) as response:
-                
-                # Check for HTTP errors (4xx or 5xx)
+            with requests.get(url, headers=headers, auth=auth, stream=True, timeout=30) as response:
                 response.raise_for_status()
-                
-                # Write to file
                 output_dir = os.path.dirname(output_filename)
                 if output_dir: 
                     os.makedirs(output_dir, exist_ok=True)
@@ -214,15 +219,12 @@ def download_url(url, email=None, retry_delay=30, max_retries=30, username=None,
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
                         
-            # Verification: Check if file exists and is not empty
             if os.path.exists(output_filename) and os.path.getsize(output_filename) > 0:
                 return os.path.abspath(output_filename)
             
         except requests.exceptions.RequestException as e:
             print(f"Attempt {attempt}/{max_retries} failed: {e}")
-            
             if attempt < max_retries:
-                print(f"Waiting {retry_delay}s before retrying...")
                 time.sleep(retry_delay)
             else:
                 print("Max retries reached. Download failed.")
