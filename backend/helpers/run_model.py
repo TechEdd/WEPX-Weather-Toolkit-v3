@@ -1,7 +1,7 @@
 import download
 import convert
 import stream_encoder
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import sys
 import shutil
@@ -10,9 +10,35 @@ from concurrent.futures import ProcessPoolExecutor
 
 CONFIG_DIR = "../configs/models"
 CONTACT_EMAIL = "eddiepelletier.2006@gmail.com"
-MAX_WAIT_MINUTES = 40
-# Define a general directory for locks to avoid collision
-LOCK_DIR = "./locks" 
+MAX_WAIT_MINUTES = 20
+OUTPUT_ROOT_DIR = r"\\192.168.0.54\testing\weather\downloads"
+# Local download directory (must match what is used in download.py)
+DOWNLOAD_DIR = download.DOWNLOAD_BASE_DIR
+
+# Directory for lock files
+LOCK_DIR = "./locks"
+
+def cleanup_old_files(directories, days=2):
+    """
+    Deletes files in the specified directories that are older than 'days'.
+    """
+    print(f"[CLEANUP] Checking for files older than {days} days...")
+    cutoff_time = time.time() - (days * 86400)
+    
+    for directory in directories:
+        if not os.path.exists(directory):
+            continue
+            
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                filepath = os.path.join(root, file)
+                try:
+                    file_mtime = os.path.getmtime(filepath)
+                    if file_mtime < cutoff_time:
+                        os.remove(filepath)
+                        print(f"[CLEANUP] Deleted old file: {filepath}")
+                except Exception as e:
+                    print(f"[CLEANUP] Error deleting {filepath}: {e}")
 
 def process_single_model(model_obj, cycle_time):
     """
@@ -48,8 +74,8 @@ def process_single_model(model_obj, cycle_time):
         # Local state for this process (critical for parallel execution)
         variable_streams = {}
         
-        # Set output directory
-        OUTPUT_BASE_DIR = "../../frontend/data/" + model_obj.id
+        # Set output directory using the global variable
+        OUTPUT_BASE_DIR = os.path.join(OUTPUT_ROOT_DIR, model_obj.id)
         os.makedirs(OUTPUT_BASE_DIR, exist_ok=True)
         
         I_FRAME_INTERVAL = 8 
@@ -140,43 +166,51 @@ def process_single_model(model_obj, cycle_time):
 
 
 def main():
-    current_time = datetime.now(timezone.utc)
-    models = download.load_all_models(CONFIG_DIR, CONTACT_EMAIL)
-    
-    # List to store tuples of (model, cycle_time) that need processing
-    tasks_to_run = []
+    last_cleanup_time = 0
+    cleanup_interval = 3600  # Run cleanup once every hour
 
-    print(f"Checking {len(models)} models at {current_time}")
-
-    for model in models:
-        status, cycle_time = model.check_download_status(current_time, MAX_WAIT_MINUTES)
+    while True:
+        current_time = datetime.now(timezone.utc)
         
-        if status == "READY":
-            tasks_to_run.append((model, cycle_time))
-        else:
-            print(f"{model.id}: {status}")
+        # --- Periodic Cleanup ---
+        if time.time() - last_cleanup_time > cleanup_interval:
+            cleanup_old_files([OUTPUT_ROOT_DIR, LOCK_DIR, DOWNLOAD_DIR], days=2)
+            last_cleanup_time = time.time()
 
-    if not tasks_to_run:
-        print("No models ready for processing.")
-        return
-
-    # Use ProcessPoolExecutor to run tasks in parallel
-    # max_workers defaults to number of processors on the machine. 
-    # Adjust if you want to limit CPU usage (e.g., max_workers=2)
-    with ProcessPoolExecutor() as executor:
-        futures = []
-        for model_obj, c_time in tasks_to_run:
-            futures.append(executor.submit(process_single_model, model_obj, c_time))
+        models = download.load_all_models(CONFIG_DIR, CONTACT_EMAIL)
         
-        # Wait for all to complete
-        for future in futures:
-            # retrieve result to propagate exceptions if any occurred
-            try:
-                future.result() 
-            except Exception as e:
-                print(f"An error occurred in a worker process: {e}")
+        # List to store tuples of (model, cycle_time) that need processing
+        tasks_to_run = []
+
+        print(f"Checking {len(models)} models at {current_time}")
+
+        for model in models:
+            status, cycle_time = model.check_download_status(current_time, MAX_WAIT_MINUTES)
+            
+            if status == "READY":
+                tasks_to_run.append((model, cycle_time))
+            else:
+                print(f"{model.id}: {status}")
+
+        if not tasks_to_run:
+            print("No models ready for processing.")
+            time.sleep(10)
+            continue
+
+        # Use ProcessPoolExecutor to run tasks in parallel
+        with ProcessPoolExecutor() as executor:
+            futures = []
+            for model_obj, c_time in tasks_to_run:
+                futures.append(executor.submit(process_single_model, model_obj, c_time))
+            
+            # Wait for all to complete
+            for future in futures:
+                try:
+                    future.result() 
+                except Exception as e:
+                    print(f"An error occurred in a worker process: {e}")
+        
+        time.sleep(10)
 
 if __name__ == "__main__":
-    while True:
-        main()
-        time.sleep(10)
+    main()
