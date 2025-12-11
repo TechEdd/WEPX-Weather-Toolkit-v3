@@ -39,15 +39,18 @@ class WeatherModelConfig:
 
     def get_forecast_duration(self, cycle_hour: int) -> int:
         """Determines forecast length based on whether it's a long or short run."""
-        configs = self.config['schedule']['cycle_configs']
-        
-        # Check Long Run
-        if cycle_hour in configs['long_run']['applies_to_hours']:
-            return configs['long_run']['forecast_hours']
-        
-        # Check Short Run
-        if cycle_hour in configs['short_run']['applies_to_hours']:
-            return configs['short_run']['forecast_hours']
+        try:
+            configs = self.config['schedule']['cycle_configs']
+            # Check Long Run
+            if cycle_hour in configs['long_run']['applies_to_hours']:
+                return configs['long_run']['forecast_hours']
+            # Check Short Run
+            if cycle_hour in configs['short_run']['applies_to_hours']:
+                return configs['short_run']['forecast_hours']
+        except:
+            print("Simple forecast config")
+            if cycle_hour in self.all_cycles:
+                return self.config['schedule']['forecast_hours']
             
         return 0 # Default safety
 
@@ -107,7 +110,7 @@ class WeatherModelConfig:
                 for var_config in self.config['variables']:
                     # Example: "var_REFC=on&lev_entire_atmosphere=on"
                     param = self.url_variable_template.format(
-                        internal_id=var_config['internal_id'],
+                        url_id=var_config['url_id'],
                         url_level=var_config['url_level']
                     )
                     variable_params.append(param)
@@ -137,8 +140,10 @@ class WeatherModelConfig:
             for fhour in range(max_fhour + 1):
                 fhour_str = f"{fhour:0{self.fhour_digits}d}"
                 for var_config in self.config['variables']:
-                    # Note: This assumes url_template expects internal_id/grib_level slots
-                    # which might not be true for the NOMADS template in your YAML.
+                    # Skip if in yaml
+                    if 'skip' in var_config and fhour in var_config['skip']:
+                        continue
+                    # Note: This assumes url_template expects url_id/grib_level slots
                     # This path is a fallback.
                     url = self.url_template.format(
                         year=year,
@@ -146,8 +151,8 @@ class WeatherModelConfig:
                         day=day,
                         cycle=cycle,
                         fhour=fhour_str,
-                        internal_id=var_config['internal_id'],
-                        grib_level=var_config['grib_level']
+                        url_id=var_config['url_id'],
+                        url_level=var_config['url_level']
                     )
                     urls.append(url)
                 

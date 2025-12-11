@@ -1,0 +1,37 @@
+metadata:
+  id: "HRRRSH"
+  display_name_short: "HRRRSH"
+  source_agency: "NOMADS"
+
+# --- Timing & Scheduling ---
+schedule:
+  # Minutes to wait after the run hour before attempting download (Replaces modelsLeadTime)
+  lead_minutes: 48
+  # Hours between runs 
+  interval_hours: 1
+
+  all_cycles: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+  
+  forecast_hours: 18
+
+# --- Download Configuration ---
+download:
+  fhour_digits: 2
+  # Python f-string format
+  #https://nomads.ncep.noaa.gov/cgi-bin/filter_hrrr_sub.pl?dir=%2Fhrrr.20251127%2Fconus&file=hrrr.t00z.wrfsubhf00.grib2&var_REFC=on&lev_entire_atmosphere=on
+  url_template: "https://nomads.ncep.noaa.gov/cgi-bin/filter_hrrr_sub.pl?dir=%2Fhrrr.{year}{month}{day}%2Fconus&file=hrrr.t{cycle}z.wrfsubhf{fhour}.grib2"
+  url_variable_template: "var_{url_id}=on&{url_level}=on"
+
+# --- Variable Mapping & Visual Limits ---
+variables:
+  - internal_id: "REFC"
+    url_id: "REFC"
+    grib_id: "REFC"
+    url_level: "lev_entire_atmosphere"
+    grib_level: "0-EATM"
+
+  - internal_id: "GUST"
+    url_id: "GUST"
+    grib_id: "GUST"
+    url_level: "lev_surface"
+    grib_level: "0-SFC"

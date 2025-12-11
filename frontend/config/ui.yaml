@@ -1,0 +1,64 @@
+# FILE: ui_config.yaml
+# Configurations for display, localization, and plotting defaults
+
+variables_metadata:
+  SBT124:
+    # Localization / Display Names
+    name_en: "Satellite Simulation"
+    name_fr: "Simulation Satellite"
+    
+    # Unit Options
+    available_units: ["C", "F", "K"] # Must match keys in units.yaml
+    grib_unit: "K"
+    default_unit: "K"
+    
+    # Colormap & Visualization
+    default_colormap: "SBT124" # References a known colormap name
+  TMP:
+    # Localization / Display Names
+    name_en: "Temperature"
+    name_fr: "Température"
+    
+    # Unit Options
+    available_units: ["C", "F", "K"] # Must match keys in units.yaml
+    grib_unit: "K"
+    default_unit: "C"
+    
+    # Colormap & Visualization
+    default_colormap: "TMP" # References a known colormap name
+
+  REFC:
+    # Localization / Display Names
+    name_en: "Composite Reflectivity"
+    name_fr: "Réflecivité Composite"
+    
+    # Unit Options
+    available_units: ["dBZ"] # Must match keys in units.yaml
+    grib_unit: "dBZ"
+    default_unit: "dBZ"
+    
+    # Colormap & Visualization
+    default_colormap: "REFC"
+    
+  GUST:
+    name_en: "Wind Gusts"
+    name_fr: "Rafales de vent"
+    
+    # Unit Options
+    available_units: ["m/s", "km/h", "knots", "mph"]
+    grib_unit: "m/s"
+    default_unit: "m/s"
+    
+    # Colormap & Visualization
+    default_colormap: "GUST" # References a known colormap name
+    
+levels_metadata:
+    0-EATM: 
+        name_en: ""
+        name_fr: ""
+    2-AGL:
+        name_en: "2m AGL"
+        name_fr: "2m AGL"
+    0-SFC:
+        name_en: "Surface Level"
+        name_fr: "Au niveau de la surface"

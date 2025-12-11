@@ -1,0 +1,45 @@
+metadata:
+  id: "HRDPS"
+  display_name_short: "HRDPS"
+  source_agency: "HPFX"
+
+# --- Timing & Scheduling ---
+schedule:
+  # Minutes to wait after the run hour before attempting download (Replaces modelsLeadTime)
+  lead_minutes: 200
+  # Hours between runs (Replaces modelsIntervalOfOutputs)
+  interval_hours: 6
+
+  all_cycles: [0,6,12,18]
+
+  forecast_hours: 48
+
+# --- Download Configuration ---
+download:
+  fhour_digits: 3
+  # Python f-string format
+  #https://hpfx.collab.science.gc.ca/20251128/WXO-DD/model_hrdps/continental/2.5km/06/001/20251128T06Z_MSC_HRDPS_TMP_AGL-2m_RLatLon0.0225_PT001H.grib2
+  url_template: "https://hpfx.collab.science.gc.ca/{year}{month}{day}/WXO-DD/model_hrdps/continental/2.5km/{cycle}/{fhour}/{year}{month}{day}T{cycle}Z_MSC_HRDPS_{url_id}_{url_level}_RLatLon0.0225_PT{fhour}H.grib2"
+  url_variable_template: ""
+
+# --- Variable Mapping & Visual Limits ---
+variables:
+  - internal_id: "TMP"
+    url_id: "TMP"
+    grib_id: "TMP"
+    url_level: "AGL-2m"
+    grib_level: "2-HTGL"
+  
+  - internal_id: "REFC"
+    url_id: "PRATE"
+    grib_id: "PRATE"
+    url_level: "Sfc"
+    grib_level: "0-SFC"
+    formula: "10 * np.log10(200 * ((np.maximum(x, 1e-10) * 3600)**1.6))"
+    skip: [0]
+
+  - internal_id: "GUST"
+    url_id: "GUST"
+    grib_id: "GUST"
+    url_level: "AGL-10m"
+    grib_level: "10-HTGL"

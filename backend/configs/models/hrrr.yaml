@@ -2,64 +2,75 @@ metadata:
   id: "HRRR"
   display_name_short: "HRRR"
   source_agency: "NOMADS"
-  
+
 # --- Timing & Scheduling ---
 schedule:
   # Minutes to wait after the run hour before attempting download (Replaces modelsLeadTime)
-  lead_minutes: 48 
+  lead_minutes: 48
   # Hours between runs (Replaces modelsIntervalOfOutputs)
   interval_hours: 1
-  
+
   all_cycles: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
-  
+
   cycle_configs:
     # Rule for Major Cycles
     long_run:
       applies_to_hours: [0, 6, 12, 18]
-      forecast_hours: 48             
-      
+      forecast_hours: 48
+
     # Rule for Minor Cycles
     short_run:
       applies_to_hours: [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23]
-      forecast_hours: 18             
-
+      forecast_hours: 18
 
 # --- Download Configuration ---
 download:
   fhour_digits: 2
   # Python f-string format
-  url_template: "https://nomads.ncep.noaa.gov/cgi-bin/filter_hrrr_2d.pl?dir=%2Fhrrr.{year}{month}{day}%2Fconus&file=hrrr.t{cycle}z.wrfsfcf{fhour}.grib2
-  url_variable_template: "var_{internal_id}=on&{url_level}=on"
+  url_template: "https://nomads.ncep.noaa.gov/cgi-bin/filter_hrrr_2d.pl?dir=%2Fhrrr.{year}{month}{day}%2Fconus&file=hrrr.t{cycle}z.wrfsfcf{fhour}.grib2"
+  url_variable_template: "var_{url_id}=on&{url_level}=on"
 
 # --- Variable Mapping & Visual Limits ---
 variables:
   - internal_id: "REFC"
+    url_id: "REFC"
     grib_id: "REFC"
     url_level: "lev_entire_atmosphere"
     grib_level: "0-EATM"
-    vmin: -10
-    vmax: 100
-    
+
   - internal_id: "TMP"
+    url_id: "TMP"
     grib_id: "TMP"
     url_level: "lev_2_m_above_ground"
-    grib_level: "2-AGL"
-    vmin: -80
-    vmax: 80
+    grib_level: "2-HTGL"
 
   - internal_id: "DPT"
+    url_id: "DPT"
     grib_id: "DPT"
     url_level: "lev_2_m_above_ground"
-    grib_level: "2-AGL"
-    vmin: -80
-    vmax: 80
+    grib_level: "2-HTGL"
 
   - internal_id: "GUST"
-    #'GRIB_ELEMENT': 'GUST'
+    url_id: "GUST"
     grib_id: "GUST"
     url_level: "lev_surface"
-    #'GRIB_SHORT_NAME': '0-SFC'
     grib_level: "0-SFC"
-    vmin: 0
-    vmax: 115
+    
+  - internal_id: "CAPE"
+    url_id: "CAPE"
+    grib_id: "CAPE"
+    url_level: "lev_surface"
+    grib_level: "0-SFC"
+    
+  - internal_id: "CIN"
+    url_id: "CIN"
+    grib_id: "CIN"
+    url_level: "lev_surface"
+    grib_level: "0-SFC"
+    
+  - internal_id: "SBT124"
+    url_id: "SBT124"
+    grib_id: "SBT124"
+    url_level: "lev_top_of_atmosphere"
+    grib_level: "0-NTAT"
     

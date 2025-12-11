@@ -9,6 +9,15 @@ conversions:
     # Target 2: Fahrenheit
     - target_unit: "F"
       formula: "({x} - 273.15) * 1.8 + 32" # Math: K -> C then C -> F
+
+  C:
+    # Target 1: Celsius
+    - target_unit: "K"
+      formula: "{x} + 273.15" # Math: K -> C
+      
+    # Target 2: Fahrenheit
+    - target_unit: "F"
+      formula: "({x} * 1.8) + 32" # C -> F
       
   # --- Source Unit: Meters per Second (m/s) ---
   "m/s":

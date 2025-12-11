@@ -1,231 +1,193 @@
 import numpy as np
-from PIL import Image
-import os
+import zlib
 import struct
-import gzip
+import json
+import os
+import math
 
 # --- Constants ---
 TYPE_I_FRAME = 0x00
 TYPE_P_FRAME = 0x01
-HEADER_STRUCT = '<IB' # Little-endian uint32 (Length), uint8 (Type)
+HEADER_STRUCT = '<IB' 
+ZLIB_LEVEL = 8     
 
-def encode_meta_float(value):
-    """
-    Encodes a float32 into 3 bytes (24 bits) of RGB.
-    Format: [Sign(1) | Exponent(7)] [Mantissa(8)] [Mantissa(8)]
-    Returns a tuple (r, g, b)
-    """
-    # Pack to standard IEEE 754 32-bit float
-    packed = struct.pack('f', float(value))
-    i = struct.unpack('I', packed)[0]
-    
-    s = (i >> 31) & 0x1
-    e = (i >> 23) & 0xFF
-    m = i & 0x7FFFFF
-    
-    # Compress Exponent (8-bit -> 7-bit)
-    # Bias is 127. We map 127 -> 63. Range roughly 10^-19 to 10^19
-    e_7bit = max(0, min(127, e - 64))
-    
-    # Compress Mantissa (23-bit -> 16-bit)
-    m_16bit = m >> 7
-    
-    # Pack into RGB
-    r = (s << 7) | e_7bit
-    g = (m_16bit >> 8) & 0xFF
-    b = m_16bit & 0xFF
-    
-    return (r, g, b)
+# Updated function for stream_encoder.py
 
-def prepare_payload(data_bytes, extra_meta):
+def calculate_dynamic_scale(data_array):
     """
-    Prepends the 4-byte Valid Time timestamp to the raw data payload.
+    Dynamically determines the decimal scaling factor based on the data range (Max - Min).
+    Uses a fixed-bucket system for deterministic precision control.
     """
+    valid_data = data_array[~np.isnan(data_array)]
+    
+    # Fallback for empty/NaN-only arrays
+    if len(valid_data) == 0:
+        return 100.0 
+
+    d_min = float(np.min(valid_data))
+    d_max = float(np.max(valid_data))
+    d_range = d_max - d_min
+
+    # --- Handle Edge Case (Flat Field) ---
+    if d_range == 0:
+        # If the range is zero (e.g., all 0mm rain), use high precision 
+        # just in case tiny values appear later, or if the single value needs precision.
+        return 10000.0 
+
+    # --- Fixed Bucket Logic ---
+    if d_range > 200.0:
+        # e.g., CAPE (0 - 4000) -> 0 decimals
+        return 1.0
+    elif d_range > 15.0:
+        # e.g., Temperature (40 - 100) -> 1 decimal
+        return 10.0
+    elif d_range > 5.0:
+        # e.g., Temperature (20 - 40) -> 2 decimals
+        return 100.0
+    else: # d_range <= 10.0
+        # e.g., PRATE (0 - 0.5) or small temperature changes -> 4 decimals
+        return 10000.0
+
+def process_transparency(data_array):
+    valid_mask = ~np.isnan(data_array)
+    if np.all(valid_mask):
+        return np.nan_to_num(data_array), None, False
+
+    packed_mask = np.packbits(valid_mask.flatten().astype(np.uint8))
+    
+    flat_data = data_array.flatten()
+    mask = np.isnan(flat_data)
+    idx = np.where(~mask, np.arange(mask.shape[0]), 0)
+    np.maximum.accumulate(idx, out=idx, axis=0)
+    filled_data = flat_data[idx]
+    
+    clean_data = filled_data.reshape(data_array.shape)
+    clean_data = np.nan_to_num(clean_data, nan=0.0)
+
+    return clean_data, packed_mask.tobytes(), True
+
+def quantize(data_array, scale):
+    return np.round(data_array * scale).astype(np.int32)
+
+def spatial_diff_encode(int_array):
+    diff = int_array.copy()
+    diff[:, 1:] -= diff[:, :-1]
+    return diff
+
+def prepare_payload(zlib_bytes, extra_meta, stream_meta=None):
     valid_time = 0
     if extra_meta and 'valid_time' in extra_meta:
         try:
             valid_time = int(extra_meta['valid_time'])
         except ValueError:
-            print(f"Warning: Invalid valid_time format: {extra_meta['valid_time']}")
-            valid_time = 0
-            
-    # Pack Valid Time as Little-Endian Unsigned Int (4 bytes)
+            pass
     time_header = struct.pack('<I', valid_time)
-    return time_header + data_bytes
+
+    meta_bytes = b''
+    if stream_meta:
+        meta_json = json.dumps(stream_meta).encode('utf-8')
+        meta_len = len(meta_json)
+        meta_bytes = struct.pack('<H', meta_len) + meta_json
+    else:
+        meta_bytes = struct.pack('<H', 0)
+
+    return time_header + meta_bytes + zlib_bytes
 
 def write_chunk(f, frame_type, payload):
-    """
-    Writes [Length][Type][Payload] to the file stream.
-    """
     length = len(payload)
     header = struct.pack(HEADER_STRUCT, length, frame_type)
     f.write(header)
     f.write(payload)
 
-def renderImage(data_array, filepath, extra_meta=None):
+# --- Main Functions ---
+
+def renderImage(data_array, filepath, extent=None, extra_meta=None):
     """
-    Initializes a new stream with the first Frame (I-Frame).
-    Calculates global min/max/range to freeze the quantization factors.
+    Calculates scale automatically, encodes I-Frame, and saves metadata.
     """
-    base_filename = filepath + "_base.timeseries"
-    detail_filename = filepath + "_detail.timeseries"
-    
-    # --- 1. Analyze Data Statistics (Global Metadata) ---
-    # We use these stats to normalize ALL future frames in this stream
+    filename = filepath + ".wepx"
+    if os.path.exists(filename): 
+        os.remove(filename)
+
+    # 1. Calculate Dynamic Scale
+    scale = calculate_dynamic_scale(data_array)
+
+    # 2. Stats for Meta
     valid_data = data_array[~np.isnan(data_array)]
-    if len(valid_data) == 0:
-        MIN, MAX = 0.0, 1.0
+    if len(valid_data) > 0:
+        min_val = float(np.min(valid_data))
+        max_val = float(np.max(valid_data))
     else:
-        MIN = float(np.min(valid_data))
-        MAX = float(np.max(valid_data))
-        
-    RANGE = MAX - MIN
-    if RANGE == 0: RANGE = 1.0
-    
-    # Heuristic: Base layer gets 8-bit precision, Residual gets 16-bit
-    # We define RES_RANGE loosely based on expected variance
-    RES_RANGE = RANGE * 0.2 # Assume residuals are smaller
-    RES_MIN = -RES_RANGE / 2
-    
+        min_val, max_val = 0.0, 0.0
+
+    clean_data, mask_bytes, has_alpha = process_transparency(data_array)
+
     metadata = {
-        'MIN': MIN, 'RANGE': RANGE,
-        'RES_MIN': RES_MIN, 'RES_RANGE': RES_RANGE,
-        'WIDTH': data_array.shape[1],
-        'HEIGHT': data_array.shape[0]
+        'min': min_val,
+        'max': max_val,
+        'width': data_array.shape[1],
+        'height': data_array.shape[0],
+        'scale': scale, # Store the calculated scale!
+        'alpha': has_alpha
     }
+    if extent:
+        metadata['extent'] = extent
 
-    # Delete existing files if starting fresh
-    if os.path.exists(base_filename): os.remove(base_filename)
-    if os.path.exists(detail_filename): os.remove(detail_filename)
+    q_curr = quantize(clean_data, scale)
+    s_diff = spatial_diff_encode(q_curr)
+    
+    raw_payload = s_diff.tobytes()
+    if has_alpha:
+        raw_payload = mask_bytes + raw_payload
 
-    # --- 2. Encode Frame 0 (I-Frame) ---
-    appendIFrame(data_array, filepath, metadata, extra_meta)
+    z_bytes = zlib.compress(raw_payload, level=ZLIB_LEVEL)
+
+    payload = prepare_payload(z_bytes, extra_meta, stream_meta=metadata)
+    with open(filename, "ab") as f:
+        write_chunk(f, TYPE_I_FRAME, payload)
     
     return metadata
 
 def appendIFrame(data_array, filepath, metadata, extra_meta=None):
-    """
-    Encodes a full frame as WebP (I-Frame) and appends to stream.
-    Handles Transparency (Alpha) for NaN values.
-    """
-    # Create Alpha Mask: 0 where NaN, 255 where valid
-    alpha_mask = np.where(np.isnan(data_array), 0, 255).astype(np.uint8)
+    filename = filepath + ".wepx"
+    
+    # Reuse the scale calculated in the first frame
+    scale = metadata.get('scale', 100.0)
 
-    # Fill NaNs with MIN for encoding calculation
-    data_array = np.nan_to_num(data_array, nan=metadata['MIN'])
+    clean_data, mask_bytes, has_alpha = process_transparency(data_array)
+    q_curr = quantize(clean_data, scale)
+    s_diff = spatial_diff_encode(q_curr)
     
-    # --- Quantize Base Layer (8-bit) ---
-    normalized = (data_array - metadata['MIN']) / metadata['RANGE']
-    base_layer = np.clip(normalized * 255, 0, 255).astype(np.uint8)
-    
-    # --- Quantize Residual (16-bit) ---
-    # Reconstruct what the base layer represents to find the error
-    reconstructed_base = base_layer.astype(np.float32) / 255.0 * metadata['RANGE'] + metadata['MIN']
-    residual_float = data_array - reconstructed_base
-    
-    norm_res = (residual_float - metadata['RES_MIN']) / metadata['RES_RANGE']
-    res_layer = np.clip(norm_res * 65535, 0, 65535).astype(np.uint16)
-    
-    # --- Pack into Images ---
-    
-    # Base Image: RGBA (R=Base, G=Base, B=Base, A=Mask)
-    # We encode metadata into the first 4 pixels of the Base Image
-    # We MUST ensure the metadata pixels are fully opaque (A=255)
-    base_img_array = np.dstack((base_layer, base_layer, base_layer, alpha_mask))
-    
-    # Inject Metadata into pixels (0,0) to (0,3)
-    if 'MIN' in metadata:
-        meta_pixels = [
-            encode_meta_float(metadata['MIN']),
-            encode_meta_float(metadata['RANGE']),
-            encode_meta_float(metadata['RES_MIN']),
-            encode_meta_float(metadata['RES_RANGE'])
-        ]
-        for i, (r, g, b) in enumerate(meta_pixels):
-            # Set RGB + Alpha=255 for metadata pixels
-            base_img_array[0, i] = [r, g, b, 255]
-
-    # Detail Image: R=ResHigh, G=ResLow, B=0
-    # Detail image doesn't strictly need alpha as it's just data containers,
-    # but we keep it RGB for simplicity.
-    r_channel = (res_layer >> 8).astype(np.uint8)
-    g_channel = (res_layer & 0xFF).astype(np.uint8)
-    b_channel = np.zeros_like(r_channel)
-    detail_img_array = np.dstack((r_channel, g_channel, b_channel))
-    
-    # --- Save to WebP Bytes ---
-    # Base (RGBA)
-    img_base = Image.fromarray(base_img_array, 'RGBA')
-    import io
-    buf_base = io.BytesIO()
-    img_base.save(buf_base, format='WEBP', quality=100, lossless=True)
-    bytes_base = buf_base.getvalue()
-    
-    # Detail (RGB)
-    img_detail = Image.fromarray(detail_img_array, 'RGB')
-    buf_detail = io.BytesIO()
-    img_detail.save(buf_detail, format='WEBP', quality=100, lossless=True)
-    bytes_detail = buf_detail.getvalue()
-
-    # --- Prep Payloads with Time ---
-    payload_base = prepare_payload(bytes_base, extra_meta)
-    payload_detail = prepare_payload(bytes_detail, extra_meta)
-
-    # --- Append to Files ---
-    with open(filepath + "_base.timeseries", "ab") as f:
-        write_chunk(f, TYPE_I_FRAME, payload_base)
+    raw_payload = s_diff.tobytes()
+    if has_alpha:
+        raw_payload = mask_bytes + raw_payload
         
-    with open(filepath + "_detail.timeseries", "ab") as f:
-        write_chunk(f, TYPE_I_FRAME, payload_detail)
-
+    z_bytes = zlib.compress(raw_payload, level=ZLIB_LEVEL)
+    
+    payload = prepare_payload(z_bytes, extra_meta, stream_meta=metadata)
+    with open(filename, "ab") as f:
+        write_chunk(f, TYPE_I_FRAME, payload)
 
 def appendImage(prev_array, curr_array, filepath, metadata, extra_meta=None):
-    """
-    Calculates delta from previous array, compresses with Gzip (P-Frame), and appends.
-    NOTE: P-Frames currently do not update the Alpha Mask. 
-    They assume the transparency mask (NoData area) is static from the I-Frame.
-    """
-    curr_array = np.nan_to_num(curr_array, nan=metadata['MIN'])
-    prev_array = np.nan_to_num(prev_array, nan=metadata['MIN'])
+    filename = filepath + ".wepx"
     
-    # --- 1. Quantize Current Frame ---
-    # Base
-    norm_curr = (curr_array - metadata['MIN']) / metadata['RANGE']
-    base_curr = np.clip(norm_curr * 255, 0, 255).astype(np.uint8)
-    
-    # Residual
-    recon_base = base_curr.astype(np.float32) / 255.0 * metadata['RANGE'] + metadata['MIN']
-    res_float = curr_array - recon_base
-    norm_res = (res_float - metadata['RES_MIN']) / metadata['RES_RANGE']
-    res_curr = np.clip(norm_res * 65535, 0, 65535).astype(np.uint16)
-    
-    # --- 2. Quantize Previous Frame (re-calculate to ensure exact sync with decoder state) ---
-    norm_prev = (prev_array - metadata['MIN']) / metadata['RANGE']
-    base_prev = np.clip(norm_prev * 255, 0, 255).astype(np.uint8)
-    
-    recon_base_prev = base_prev.astype(np.float32) / 255.0 * metadata['RANGE'] + metadata['MIN']
-    res_float_prev = prev_array - recon_base_prev
-    norm_res_prev = (res_float_prev - metadata['RES_MIN']) / metadata['RES_RANGE']
-    res_prev = np.clip(norm_res_prev * 65535, 0, 65535).astype(np.uint16)
-    
-    # --- 3. Calculate Deltas ---
-    # Base Delta (int16 to safely hold -255 to 255)
-    delta_base = base_curr.astype(np.int16) - base_prev.astype(np.int16)
-    
-    # Residual Delta (int32 to safely hold -65535 to 65535)
-    delta_res = res_curr.astype(np.int32) - res_prev.astype(np.int32)
-    
-    # --- 4. Compress ---
-    bytes_base = gzip.compress(delta_base.tobytes())
-    bytes_detail = gzip.compress(delta_res.tobytes())
+    scale = metadata.get('scale', 100.0)
 
-    # --- 5. Prep Payloads with Time ---
-    payload_base = prepare_payload(bytes_base, extra_meta)
-    payload_detail = prepare_payload(bytes_detail, extra_meta)
-    
-    # --- 6. Write ---
-    with open(filepath + "_base.timeseries", "ab") as f:
-        write_chunk(f, TYPE_P_FRAME, payload_base)
-        
-    with open(filepath + "_detail.timeseries", "ab") as f:
-        write_chunk(f, TYPE_P_FRAME, payload_detail)
+    clean_curr, mask_bytes, has_alpha = process_transparency(curr_array)
+    clean_prev, _, _ = process_transparency(prev_array)
+
+    q_curr = quantize(clean_curr, scale)
+    q_prev = quantize(clean_prev, scale)
+
+    t_diff = q_curr - q_prev
+    s_t_diff = spatial_diff_encode(t_diff)
+
+    raw_payload = s_t_diff.tobytes()
+    if has_alpha:
+        raw_payload = mask_bytes + raw_payload
+
+    z_bytes = zlib.compress(raw_payload, level=ZLIB_LEVEL)
+
+    payload = prepare_payload(z_bytes, extra_meta, stream_meta=None)
+    with open(filename, "ab") as f:
+        write_chunk(f, TYPE_P_FRAME, payload)

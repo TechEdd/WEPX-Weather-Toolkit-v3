@@ -5,6 +5,8 @@ import stream_encoder
 import rioxarray
 import uuid
 
+gdal.UseExceptions()
+
 NODATA = np.finfo(np.float32).min
 
 def get_best_width_for_epsg4326(filepath):
@@ -53,10 +55,15 @@ def get_best_width_for_epsg4326(filepath):
     min_lon, max_lon = min(lons), max(lons)
     min_lat, max_lat = min(lats), max(lats)
     bbox_width = max_lon - min_lon
+    
+    if source_srs.IsGeographic():
+        target_res_deg = native_res
+    else:
+        # Only convert if source is Projected (Meters)
+        safe_lat = 0 if (min_lat < 0 < max_lat) else min(abs(min_lat), abs(max_lat))
+        meters_per_deg = 111320 * math.cos(math.radians(safe_lat))
+        target_res_deg = native_res / meters_per_deg
 
-    safe_lat = 0 if (min_lat < 0 < max_lat) else min(abs(min_lat), abs(max_lat))
-    meters_per_deg = 111320 * math.cos(math.radians(safe_lat))
-    target_res_deg = native_res / meters_per_deg
     final_width_px = math.ceil(bbox_width / target_res_deg)
     
     return final_width_px    
@@ -69,7 +76,8 @@ def calculateAspectRatio(extent):
         return width / height
     return 1.0
 
-def get_raster_extent_in_lonlat(dataset, model=None):
+def get_raster_extent_in_lonlat(filepath, model=None):
+    dataset = gdal.Open(filepath)
     geotransform = dataset.GetGeoTransform()
     x_size = dataset.RasterXSize
     y_size = dataset.RasterYSize
@@ -116,15 +124,13 @@ def get_raster_extent_in_lonlat(dataset, model=None):
                 lon_min = min(lon_min, lon)
                 lon_max = max(lon_max, lon)
 
-    # Returning xmin, ymin, xmax, ymax format logic varies, ensuring standard [minLon, minLat, maxLon, maxLat] or similar
-    # The original code returned [lat_min, lon_min, lat_max, lon_max]
     return [lat_min, lon_min, lat_max, lon_max]
 
 
-def process_multi_band_grib(filepath, width, variables_config, model=None):
+def process_multi_band_grib(filepath, width, variables_config, model=None, saveExtent=None):
     """
-    Opens a GRIB file, iterates through all bands, finds matches in the variables_config
-    checking both GRIB_ELEMENT and GRIB_SHORT_NAME (level), and returns processed data.
+    Opens a GRIB file, iterates through all bands, finds matches in the variables_config,
+    warps to EPSG:4326, and returns processed data as 16-bit Floats for high compression.
     """
     ds = gdal.Open(filepath)
     if not ds:
@@ -134,7 +140,7 @@ def process_multi_band_grib(filepath, width, variables_config, model=None):
     results = []
     
     # Cache extent calculation to avoid doing it for every band
-    extent = get_raster_extent_in_lonlat(ds, model)
+    extent = get_raster_extent_in_lonlat(filepath, model)
     
     # Iterate through all bands in the GRIB file
     for i in range(1, ds.RasterCount + 1):
@@ -142,26 +148,21 @@ def process_multi_band_grib(filepath, width, variables_config, model=None):
         meta = band.GetMetadata()
         
         grib_element = meta.get('GRIB_ELEMENT', '').strip()
-        grib_short_name = meta.get('GRIB_SHORT_NAME', '').strip() # e.g., "2-htgl"
+        grib_short_name = meta.get('GRIB_SHORT_NAME', '').strip() 
         
         matched_config = None
-        
         for var_conf in variables_config:
-            # Check Element Match (e.g. TMP, REFC)
             if grib_element != var_conf['grib_id']:
                 continue
 
-            # Check Level Match (e.g. 2-htgl, 0-EATM)
-            # If the config has a level defined, we must ensure it matches GRIB_SHORT_NAME
             config_level = var_conf.get('grib_level', '').strip()
             
             if config_level and config_level != grib_short_name:
-                continue # Level mismatch, try next config
+                continue 
             
-            # If we get here, it's a match
             matched_config = var_conf
             break
-        
+            
         if matched_config:
             # --- Extraction ---
             stream_id = f"{matched_config['internal_id']}_{matched_config['grib_level']}"
@@ -171,8 +172,17 @@ def process_multi_band_grib(filepath, width, variables_config, model=None):
             print(f"  Found {stream_id} in Band {i} (Ref: {ref_time}, Valid: {valid_time})")
 
             # --- Conversion (Warping) ---
-            # Read raw array
-            raw_data = band.ReadAsArray().astype(float)
+            # Read raw array as float32 for initial processing
+            raw_data = band.ReadAsArray().astype(np.float32)
+            
+            if "formula" in matched_config:
+                formula = matched_config["formula"]
+                print(f"Doing {formula}")
+                x = raw_data
+                eval_globals = {"np": np}
+                eval_locals = {"x": x}
+                # Ensure result of formula stays valid before casting
+                raw_data = eval(formula, eval_globals, eval_locals)
             
             # Setup In-Memory Driver for warping
             driver = gdal.GetDriverByName('MEM')
@@ -185,7 +195,7 @@ def process_multi_band_grib(filepath, width, variables_config, model=None):
             # Calculate height based on aspect ratio
             height_resolution = width / calculateAspectRatio(extent)
             
-            # Warp to EPSG:4326
+            # Warp to EPSG:4326 (Keep float32 for warp accuracy)
             warped_ds = gdal.Warp(
                 '',
                 mem_ds,
@@ -194,18 +204,20 @@ def process_multi_band_grib(filepath, width, variables_config, model=None):
                 width=int(width),
                 height=int(height_resolution),
                 outputType=gdal.GDT_Float32,
-                dstNodata=NODATA,
+                dstNodata=np.nan,
                 format="MEM"
             )
             
-            final_array = warped_ds.ReadAsArray()
-            final_array[final_array == NODATA] = np.nan
+            # CAST TO FLOAT16 HERE
+            # This strips the 32-bit noise before it ever reaches the encoder
+            final_array = warped_ds.ReadAsArray().astype(np.float16)
             
             results.append({
                 'stream_id': stream_id,
-                'data': np.array(final_array),
+                'data': final_array,
                 'ref_time': str(int(ref_time)),
-                'valid_time': str(int(valid_time))
+                'valid_time': str(int(valid_time)),
+                'extent': extent
             })
             
     return results
