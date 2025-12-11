@@ -49,6 +49,8 @@ def resolve_stream_file(request_path):
     # Construct the path: data + path_from_url + .wepx
     # On Windows, os.path.join handles the backslashes automatically
     file_path = os.path.join("data", f"{clean_path}.wepx")
+    if not os.path.commonprefix([os.path.abspath(file_path), base_dir]) == base_dir:
+       return 0
     
     # Normalize cleans up mixed slashes (e.g. data/folder\file -> data\folder\file)
     return os.path.normpath(file_path)
@@ -57,7 +59,12 @@ async def handler(websocket, path):
     print(f"Client connected with path: {path}")
     
     target_file = resolve_stream_file(path)
-
+    
+    if not target_file:
+        print(f"  [!] REJECTED TRAVERSAL ATTEMPT: {path}")
+        await websocket.close(1008, "Invalid path")
+        return
+        
     # --- DEBUGGING: Print the exact path the script is trying to find ---
     print(f"  -> Looking for Stream: {target_file}")
 

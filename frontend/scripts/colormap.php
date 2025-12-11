@@ -10,7 +10,7 @@ $variable = $_GET['variable'];
 		// Check if the file exists
 		if (file_exists($filePath)) {
 			// Read and echo the file contents
-			include($filePath);
+			readfile($filePath);
 		} else {
 			// Handle the case where the file does not exist
 			echo "Error: File not found.";
