@@ -202,13 +202,13 @@ def download_url(url, email=None, retry_delay=30, max_retries=30, username=None,
                 # Generate a unique name for the aggregated file
                 # e.g., hrrr.t12z.wrfsfcf00.multi.grib2
                 base_name = url.split("file=")[1].split("&")[0]
-                output_filename = forecast_hour + "/" + base_name
+                output_filename = "data/" + forecast_hour + "/" + base_name
             else:
-                output_filename = "unknown_fhour.grib2"
+                output_filename = "data/" + "unknown_fhour.grib2"
                 
         else:
             parsed_url = urlparse(url)
-            output_filename = os.path.basename(parsed_url.path)
+            output_filename = "data/" + os.path.basename(parsed_url.path)
 
     print(f"Target filename: {output_filename}")
 
