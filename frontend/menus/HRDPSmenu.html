@@ -1,0 +1,21 @@
+<div class="dropdown-container">
+  <button class="dropdown-btn" onclick="toggleDropdown('dropdownParameters')">Parameter</button>
+  
+  <!-- Main Dropdown Content -->
+  <div id="dropdownParameters" class="dropdown-content">
+    
+    <!-- Weather Models -->
+    <div class="expandable" onclick="toggleDropdown('surface')">
+      <span>Surface</span>
+      <span class="arrow">›</span>
+    </div>
+    <div id="surface" class="nested-dropdown-content">
+        <a id="CAPE" onclick="changeParameter('CAPE', '0-SFC')" title="">CAPE at Surface</a>
+        <a id="GUST" onclick="changeParameter('GUST', '10-HTGL')" title="">Gusts at 10m</a>
+		<a id="DPT" onclick="changeParameter('DPT', '2-HTGL')" title="">Dew Point Temperature at 2m</a>
+		<a id="TMP" onclick="changeParameter('TMP', '2-HTGL')" title="">Temperature at 2m</a>
+		<a id="REFC" onclick="changeParameter('REFC', '0-SFC')" title="">Surface Reflectivity</a>
+	</div>
+
+  </div>
+</div>

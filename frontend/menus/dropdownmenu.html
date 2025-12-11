@@ -1,0 +1,89 @@
+<div class="dropdown-container">
+  <button class="dropdown-btn" onclick="toggleDropdown('dropdownModels')">Menu</button>
+  
+  <!-- Main Dropdown Content -->
+  <div id="dropdownModels" class="dropdown-content">
+    
+    <!-- Weather Models -->
+    <div class="expandable" onclick="toggleDropdown('weatherModels')">
+      <span>Weather Models</span>
+      <span class="arrow">›</span>
+    </div>
+    <div id="weatherModels" class="nested-dropdown-content">
+      <div class="expandable" onclick="toggleDropdown('highResolution')">
+        <span>High Resolution</span>
+        <span class="arrow">›</span>
+      </div>
+      <div id="highResolution" class="nested-dropdown-content">
+        <a href="javascript:(function(){updateUrlVariable('model', 'HRDPS');reloadImagesPrepare();})()" title="High Resolution Deterministic Prediction System">HRDPS</a>
+        <a href="javascript:(function(){updateUrlVariable('model', 'HRRR');reloadImagesPrepare();})()" title="High Resolution Rapid Refresh (3km)">HRRR</a>
+        <a href="javascript:(function(){updateUrlVariable('model', 'HRRRSH');reloadImagesPrepare();})()" title="HRRR Sub Hourly (3km)">HRRRSH</a>
+        <a href="javascript:(function(){updateUrlVariable('model', 'NAMNEST');reloadImagesPrepare();})()" title="North American Mesoscale High Resolution (3km)">NAM NEST</a>
+      </div>
+      <div class="expandable" onclick="toggleDropdown('globalModels')">
+        <span>Global Models</span>
+        <span class="arrow">›</span>
+      </div>
+      <div id="globalModels" class="nested-dropdown-content">
+        <a href="javascript:(function(){updateUrlVariable('model', 'GDPS');})()" title="Global Deterministic Prediction System">GDPS</a>
+      </div>
+    </div>
+
+    <!-- Radars -->
+	<!--
+    <div class="expandable" onclick="toggleDropdown('radars')">
+      <span>Radars</span>
+      <span class="arrow">›</span>
+    </div>
+    <div id="radars" class="nested-dropdown-content">
+      <div class="expandable" onclick="toggleDropdown('radarQuebec')">
+		  <span title="Weather Radars in Québec">Québec</span>
+		  <span class="arrow">›</span>
+	  </div>
+	  <div id="radarQuebec" class="nested-dropdown-content">
+		  <a href="#" title="Blainville, QC">CASBV</a>
+		  <a href="#" title="Mont Apica">CASMA</a>
+		  <a href="#" title="Sainte-Françoise, QC">CASSF</a>
+	  </div>
+	  <div class="expandable" onclick="toggleDropdown('radarOntario')">
+		  <span title="Weather Radars in Ontario">Ontario</span>
+		  <span class="arrow">›</span>
+	  </div>
+	  <div id="radarOntario" class="nested-dropdown-content">
+	  </div>
+	  <div class="expandable" onclick="toggleDropdown('compositeRadar')">
+		<span title="Composite of all radars in North America">Composite Radar</span>
+		<span class="arrow">›</span>
+	  </div>
+	  <div class="expandable" onclick="toggleDropdown('satellitePrcp')">
+		<span title="Precipitation Rate from GOES">Satellite Precip Rate</span>
+		<span class="arrow">›</span>
+	  </div>
+    </div>
+	-->
+    <!-- Satellite -->
+	<!--
+    <div class="expandable" onclick="toggleDropdown('satellite')">
+      <span>Satellite</span>
+      <span class="arrow">›</span>
+    </div>
+    <div id="satellite" class="nested-dropdown-content">
+      <a href="#" title="Red Band (0.5km)">ABI-02 - Red Band</a>
+      <a href="#" title="Clean Long Range Infrared">ABI-13 - Clean LWIR</a>
+      <a href="#" title="NOAA GeoColor">GeoColor</a>
+    </div>
+	-->
+    <!-- Lightning -->
+	<!--
+    <div class="expandable" onclick="toggleDropdown('lightning')">
+      <span>Lightning</span>
+      <span class="arrow">›</span>
+    </div>
+    <div id="lightning" class="nested-dropdown-content">
+      <a href="#" title="20secs files for lightning detection">Real Time Lightning</a>
+      <a href="#" title="GOES Group Lightning">GLM Group Energy Density</a>
+    </div>
+  -->
+  </div>
+  
+</div>

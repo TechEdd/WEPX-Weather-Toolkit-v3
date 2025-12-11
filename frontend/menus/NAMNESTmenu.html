@@ -1,0 +1,22 @@
+<div class="dropdown-container">
+  <button class="dropdown-btn" onclick="toggleDropdown('dropdownParameters')">Parameter</button>
+  
+  <!-- Main Dropdown Content -->
+  <div id="dropdownParameters" class="dropdown-content">
+
+      <!-- Weather Models -->
+      <div class="expandable" onclick="toggleDropdown('surface')">
+          <span>Surface</span>
+          <span class="arrow">›</span>
+      </div>
+      <div id="surface" class="nested-dropdown-content">
+          <a id="CAPE" href="javascript:(function(){updateUrlVariable('variable', 'CAPE');updateUrlVariable('level', 'lev_surface');reloadImagesPrepare()})()" title="">CAPE at Surface</a>
+          <a id="CIN" href="javascript:(function(){updateUrlVariable('variable', 'CIN');updateUrlVariable('level', 'lev_surface');reloadImagesPrepare()})()" title="">CIN at Surface</a>
+          <a id="DPT" href="javascript:(function(){updateUrlVariable('variable', 'DPT');updateUrlVariable('level', 'lev_2_m_above_ground');reloadImagesPrepare()})()" title="">Dew Point Temperature at 2m</a>
+          <a id="TMP" href="javascript:(function(){updateUrlVariable('variable', 'TMP');updateUrlVariable('level', 'lev_2_m_above_ground');reloadImagesPrepare()})()" title="">Temperature at 2m</a>
+          <a id="BRTMP" href="javascript:(function(){updateUrlVariable('variable', 'BRTMP');updateUrlVariable('level', 'lev_top_of_atmosphere');reloadImagesPrepare()})()" title="">Satellite IR Simulation</a>
+          <a id="REFC" href="javascript:(function(){updateUrlVariable('variable', 'REFC');updateUrlVariable('level', 'lev_entire_atmosphere');reloadImagesPrepare()})()" title="">Composite Reflectivity</a>
+          <a id="RETOP" href="javascript:(function(){updateUrlVariable('variable', 'RETOP');updateUrlVariable('level', 'lev_cloud_top');reloadImagesPrepare()})()" title="">Echo Tops</a>
+      </div>
+  </div>
+</div>

@@ -1,0 +1,15 @@
+<div class="dropdown-container">
+  <button class="dropdown-btn" onclick="toggleDropdown('dropdownParameters')">Parameter</button>
+  
+  <!-- Main Dropdown Content -->
+  <div id="dropdownParameters" class="dropdown-content">
+
+      <a id="reflectivity_horizontal" href="javascript:(function(){updateUrlVariable('variable', 'reflectivity_horizontal');reloadImagesPrepare()})()" title="">Reflectivity</a>
+      <a id="velocity_horizontal" href="javascript:(function(){updateUrlVariable('variable', 'velocity_horizontal');reloadImagesPrepare()})()" title="">Velocity</a>
+      <a id="cross_correlation_ratio" href="javascript:(function(){updateUrlVariable('variable', 'cross_correlation_ratio');reloadImagesPrepare()})()" title="">Cross Correlation</a>
+      <a id="differential_reflectivity" href="javascript:(function(){updateUrlVariable('variable', 'differential_reflectivity');reloadImagesPrepare()})()" title="">Differential Reflectivity</a>
+      <a id="specific_differential_phase" href="javascript:(function(){updateUrlVariable('variable', 'specific_differential_phase');reloadImagesPrepare()})()" title="">Specific Differential Phase</a>
+      <a id="echo_tops" href="javascript:(function(){updateUrlVariable('variable', 'echo_tops');updateUrlVariable('level', 'tilt17');reloadImagesPrepare()})()" title="">Super-Res Echo Tops</a>
+  </div>
+
+</div>

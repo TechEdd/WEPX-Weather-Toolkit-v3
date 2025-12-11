@@ -1,0 +1,21 @@
+<div class="dropdown-container">
+  <button class="dropdown-btn" onclick="toggleDropdown('dropdownParameters')">Parameter</button>
+  
+  <!-- Main Dropdown Content -->
+  <div id="dropdownParameters" class="dropdown-content">
+    
+    <!-- Weather Models -->
+    <div class="expandable" onclick="toggleDropdown('surface')">
+      <span>Surface</span>
+      <span class="arrow">›</span>
+    </div>
+    <div id="surface" class="nested-dropdown-content">
+        <!--<a id="SBT124" onclick="changeParameter('SBT124', 'lev_top_of_atmosphere')" title="">Satellite IR Simulation</a>
+        -->
+		<a id="REFC" onclick="changeParameter('REFC', '0-EATM')" title="">Composite Reflectivity</a>
+		<a id="GUST" onclick="changeParameter('GUST', '0-SFC')" title="">Wind Gusts</a>
+		
+    </div>
+
+  </div>
+</div>
