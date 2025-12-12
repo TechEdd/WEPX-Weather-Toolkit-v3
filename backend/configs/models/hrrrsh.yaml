@@ -35,3 +35,9 @@ variables:
     grib_id: "GUST"
     url_level: "lev_surface"
     grib_level: "0-SFC"
+    
+  - internal_id: "RETOP"
+    url_id: "RETOP"
+    grib_id: "RETOP"
+    url_level: "lev_cloud_top"
+    grib_level: "0-CTL"
